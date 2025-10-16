@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UN Joint Work Plan (JWP) Update Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- CSV Parsing Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #0ea5e9;
+            animation: spin 1s ease infinite;
+        }
+        .form-input, .form-textarea, .form-select, .form-file {
+            @apply block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm;
+        }
+        .btn {
+            @apply inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2;
+        }
+        .btn-primary {
+            @apply bg-sky-600 hover:bg-sky-700 focus:ring-sky-500;
+        }
+        .btn-secondary {
+            @apply bg-gray-600 hover:bg-gray-700 focus:ring-gray-500;
+        }
+         .btn:disabled {
+            @apply bg-gray-300 cursor-not-allowed;
+        }
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            width: 90%;
+            max-width: 48rem; /* 768px */
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div id="app" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl font-bold text-gray-900">UN Joint Work Plan (JWP) Update Portal</h1>
+            <p id="header-subtitle" class="mt-2 text-md text-gray-600">Upload your JWP file to begin.</p>
+        </header>
+
+        <main class="bg-white p-6 sm:p-8 rounded-lg shadow-md">
+            <!-- Upload Section -->
+            <div id="upload-section">
+                <label for="csv-file-input" class="block text-sm font-medium text-gray-700">JWP Data File (.csv)</label>
+                <input type="file" id="csv-file-input" accept=".csv" class="form-file mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"/>
+                <p class="mt-2 text-xs text-gray-500">Please select the CSV file exported from your Excel sheet.</p>
+            </div>
+            
+            <!-- Main Content Area (initially hidden) -->
+            <div id="main-content" class="hidden">
+                 <!-- Controls -->
+                 <div class="flex flex-wrap items-center justify-between mb-6 gap-4">
+                    <div class="flex-grow max-w-sm">
+                        <label for="agency-filter" class="block text-sm font-medium text-gray-700 mb-1">Select Agency</label>
+                        <select id="agency-filter" class="form-select">
+                            <option value="all">Show All Agencies</option>
+                        </select>
+                    </div>
+                    <div>
+                         <label class="block text-sm font-medium text-gray-700 mb-1 invisible">Export Data</label>
+                        <button id="download-btn" class="btn btn-secondary w-full sm:w-auto">Download Data as CSV</button>
+                    </div>
+                </div>
+
+                <!-- Activities Container -->
+                <div id="activities-container">
+                    <!-- Data will be dynamically inserted here -->
+                </div>
+                 <div id="no-activities" class="hidden text-center py-12">
+                    <p class="text-gray-500">No activities found for the selected agency.</p>
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
+            <div id="loader" class="hidden flex-col justify-center items-center py-16">
+                <div class="spinner"></div>
+                <p id="loader-text" class="ml-4 text-gray-600 mt-4">Processing file...</p>
+            </div>
+            
+            <!-- Message Area -->
+            <div id="message-area" class="hidden my-4 p-4 text-sm rounded-md"></div>
+        </main>
+    </div>
+
+    <!-- Update Modal -->
+    <div id="update-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">Update Activity</h3>
+            <div class="space-y-4">
+                <div>
+                    <p class="text-sm text-gray-700 font-medium">Activity</p>
+                    <p class="text-sm text-gray-600 bg-gray-50 p-2 rounded-md" id="modal-activity-name"></p>
+                </div>
+                <hr/>
+                <p class="text-sm font-semibold text-gray-800">Please provide your details before saving:</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="updater-name" class="block text-sm font-medium text-gray-700">Your Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="updater-name" class="form-input mt-1" required>
+                    </div>
+                    <div>
+                        <label for="updater-email" class="block text-sm font-medium text-gray-700">Your Email <span class="text-red-500">*</span></label>
+                        <input type="email" id="updater-email" class="form-input mt-1" required>
+                    </div>
+                </div>
+                <hr/>
+                <div>
+                    <label for="modal-budget" class="block text-sm font-medium text-gray-700">Budget ($)</label>
+                    <input type="number" id="modal-budget" class="form-input mt-1" placeholder="Enter budget">
+                </div>
+                <div>
+                    <label for="modal-end-date" class="block text-sm font-medium text-gray-700">End Date</label>
+                    <input type="date" id="modal-end-date" class="form-input mt-1">
+                </div>
+                <div>
+                    <label for="modal-progress-update" class="block text-sm font-medium text-gray-700">Progress Update</label>
+                    <textarea id="modal-progress-update" rows="4" class="form-textarea mt-1" placeholder="Provide progress details..."></textarea>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button type="button" id="modal-cancel-btn" class="btn bg-gray-200 text-gray-700 hover:bg-gray-300">Cancel</button>
+                <button type="button" id="modal-save-btn" class="btn btn-primary" disabled>Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, getDocs, doc, writeBatch, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- Firebase Configuration ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { apiKey: "your-api-key", authDomain: "your-auth-domain", projectId: "your-project-id" };
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-jwp-app';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let db, auth;
+        let allActivities = [];
+        const jwpCollectionPath = `/artifacts/${appId}/public/data/jwp-activities`;
+        let currentActivityId = null;
+
+        // --- UI Elements ---
+        const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loader-text');
+        const activitiesContainer = document.getElementById('activities-container');
+        const noActivitiesMessage = document.getElementById('no-activities');
+        const agencyFilter = document.getElementById('agency-filter');
+        const messageArea = document.getElementById('message-area');
+        const uploadSection = document.getElementById('upload-section');
+        const mainContent = document.getElementById('main-content');
+        const csvFileInput = document.getElementById('csv-file-input');
+        const headerSubtitle = document.getElementById('header-subtitle');
+        const downloadBtn = document.getElementById('download-btn');
+        // Modal UI Elements
+        const updateModal = document.getElementById('update-modal');
+        const modalActivityName = document.getElementById('modal-activity-name');
+        const modalSaveBtn = document.getElementById('modal-save-btn');
+        const modalCancelBtn = document.getElementById('modal-cancel-btn');
+        const updaterNameInput = document.getElementById('updater-name');
+        const updaterEmailInput = document.getElementById('updater-email');
+        const modalBudgetInput = document.getElementById('modal-budget');
+        const modalEndDateInput = document.getElementById('modal-end-date');
+        const modalProgressUpdateInput = document.getElementById('modal-progress-update');
+
+
+        async function initializeAppLogic() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                 // Check if data exists already, if so, load it without asking for upload
+                const existingData = await getDocs(collection(db, jwpCollectionPath));
+                if (existingData.size > 0) {
+                    uploadSection.classList.add('hidden');
+                    loader.classList.remove('hidden');
+                    loader.style.display = 'flex';
+                    await loadAndRenderUI();
+                }
+
+            } catch (error) {
+                console.error("Initialization failed:", error);
+                showMessage(`Error: Could not connect to the database. ${error.message}`, 'error');
+            }
+        }
+        
+        async function handleFileUpload(file) {
+            uploadSection.classList.add('hidden');
+            loader.classList.remove('hidden');
+            loader.style.display = 'flex';
+            loaderText.textContent = 'Parsing CSV file...';
+
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: async (results) => {
+                    if (results.errors.length > 0) {
+                        console.error("CSV Parsing errors:", results.errors);
+                        showMessage(`Error parsing CSV file. Please check the file format.`, 'error');
+                        loader.classList.add('hidden');
+                        uploadSection.classList.remove('hidden');
+                        return;
+                    }
+                    const parsedActivities = results.data.map(row => ({
+                        outcome: row['Outcome'] || '',
+                        output: row['Sub-Output'] || '',
+                        agency: row['Name of Agency'] || 'N/A',
+                        activityName: row['Activity'] || 'Untitled Activity',
+                        endDate: "",
+                        budget: "",
+                        progressUpdate: ""
+                    })).filter(act => act.activityName !== 'Untitled Activity');
+
+                    await syncDataWithFirestore(parsedActivities);
+                },
+                error: (err) => {
+                     console.error("PapaParse error:", err);
+                     showMessage(`Failed to read the file. Error: ${err.message}`, 'error');
+                     loader.classList.add('hidden');
+                     uploadSection.classList.remove('hidden');
+                }
+            });
+        }
+
+        async function syncDataWithFirestore(parsedActivities) {
+            loaderText.textContent = 'Checking for existing data...';
+            
+            try {
+                const existingActivitiesSnapshot = await getDocs(collection(db, jwpCollectionPath));
+                const existingActivitiesMap = new Map();
+                existingActivitiesSnapshot.forEach(doc => {
+                    const data = doc.data();
+                    existingActivitiesMap.set(data.activityName, doc.id);
+                });
+
+                const newActivities = parsedActivities.filter(
+                    parsedActivity => !existingActivitiesMap.has(parsedActivity.activityName)
+                );
+
+                if (newActivities.length === 0) {
+                    showMessage('No new activities found in the file. All data is up to date.', 'success');
+                    await loadAndRenderUI();
+                    return;
+                }
+
+                const BATCH_SIZE = 400; // Keep well under the 500 limit
+                for (let i = 0; i < newActivities.length; i += BATCH_SIZE) {
+                    const chunk = newActivities.slice(i, i + BATCH_SIZE);
+                    const batch = writeBatch(db);
+                    
+                    chunk.forEach(activity => {
+                        const docRef = doc(collection(db, jwpCollectionPath));
+                        batch.set(docRef, { ...activity, createdAt: serverTimestamp() });
+                    });
+                    
+                    const start = i + 1;
+                    const end = i + chunk.length;
+                    loaderText.textContent = `Uploading new activities ${start}-${end} of ${newActivities.length}...`;
+                    await batch.commit();
+                }
+
+                showMessage(`${newActivities.length} new activities successfully added.`, 'success');
+                await loadAndRenderUI();
+            } catch(error) {
+                console.error("Error during sync:", error);
+                showMessage(`An error occurred during the data upload: ${error.message}`, 'error');
+                loader.classList.add('hidden');
+                uploadSection.classList.remove('hidden'); // Show upload section again on failure
+            }
+        }
+
+        async function loadAndRenderUI() {
+            loaderText.textContent = 'Loading activities...';
+            await fetchActivities();
+            
+            populateAgencyFilter();
+            renderActivities('all');
+
+            loader.classList.add('hidden');
+            mainContent.classList.remove('hidden');
+            headerSubtitle.textContent = 'Filter by your agency to view and update your activities.';
+            showMessage(`Successfully loaded ${allActivities.length} activities.`, 'success');
+        }
+
+
+        async function fetchActivities() {
+            const activitiesCollection = collection(db, jwpCollectionPath);
+            const snapshot = await getDocs(activitiesCollection);
+            allActivities = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        }
+
+        function populateAgencyFilter() {
+            agencyFilter.innerHTML = '<option value="all">Show All Agencies</option>';
+            const agencies = [...new Set(allActivities.map(act => act.agency))].sort();
+            agencies.forEach(agency => {
+                const option = document.createElement('option');
+                option.value = agency;
+                option.textContent = agency;
+                agencyFilter.appendChild(option);
+            });
+        }
+        
+        function renderActivities(selectedAgency) {
+            activitiesContainer.innerHTML = '';
+            
+            const filteredActivities = selectedAgency === 'all'
+                ? allActivities
+                : allActivities.filter(act => act.agency === selectedAgency);
+
+            if (filteredActivities.length === 0) {
+                noActivitiesMessage.classList.remove('hidden');
+                activitiesContainer.classList.add('hidden');
+                return;
+            }
+            
+            noActivitiesMessage.classList.add('hidden');
+            activitiesContainer.classList.remove('hidden');
+
+            const groupedByOutcome = filteredActivities.reduce((acc, activity) => {
+                const { outcome, output } = activity;
+                if (!acc[outcome]) acc[outcome] = {};
+                if (!acc[outcome][output]) acc[outcome][output] = [];
+                acc[outcome][output].push(activity);
+                return acc;
+            }, {});
+
+            for (const outcome in groupedByOutcome) {
+                const outcomeElement = document.createElement('div');
+                outcomeElement.className = 'mb-8';
+                outcomeElement.innerHTML = `<h2 class="text-xl font-semibold text-gray-800 border-b-2 border-sky-200 pb-2 mb-4">${outcome}</h2>`;
+
+                for (const output in groupedByOutcome[outcome]) {
+                    const outputElement = document.createElement('div');
+                    outputElement.className = 'mb-6 pl-4';
+                    outputElement.innerHTML = `<h3 class="text-lg font-medium text-gray-700 mb-3">${output}</h3>`;
+                    
+                    const tableContainer = document.createElement('div');
+                    tableContainer.className = 'overflow-x-auto';
+                    
+                    const table = document.createElement('table');
+                    table.className = 'min-w-full divide-y divide-gray-200';
+                    table.innerHTML = `
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">Activity</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Budget ($)</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End Date</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Progress Update</th>
+                                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Update</span></th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200"></tbody>
+                    `;
+                    
+                    const tbody = table.querySelector('tbody');
+                    groupedByOutcome[outcome][output].forEach(activity => {
+                        const row = document.createElement('tr');
+                        row.dataset.id = activity.id;
+                        row.innerHTML = `
+                            <td class="px-6 py-4 text-sm text-gray-800 align-top">${activity.activityName}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm align-top">${activity.budget ? '$' + Number(activity.budget).toLocaleString() : 'N/A'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm align-top">${activity.endDate || 'N/A'}</td>
+                            <td class="px-6 py-4 text-sm text-gray-600 align-top whitespace-pre-wrap">${activity.progressUpdate || 'N/A'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium align-top">
+                                <button class="btn btn-primary update-btn">Update</button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    
+                    tableContainer.appendChild(table);
+                    outputElement.appendChild(tableContainer);
+                    outcomeElement.appendChild(outputElement);
+                }
+                activitiesContainer.appendChild(outcomeElement);
+            }
+        }
+
+        function openUpdateModal(activityId) {
+            const activity = allActivities.find(act => act.id === activityId);
+            if (!activity) return;
+
+            currentActivityId = activityId;
+            modalActivityName.textContent = activity.activityName;
+            modalBudgetInput.value = activity.budget || '';
+            modalEndDateInput.value = activity.endDate || '';
+            modalProgressUpdateInput.value = activity.progressUpdate || '';
+            updaterNameInput.value = '';
+            updaterEmailInput.value = '';
+            modalSaveBtn.disabled = true;
+
+            updateModal.classList.remove('hidden');
+        }
+
+        function closeUpdateModal() {
+            currentActivityId = null;
+            updateModal.classList.add('hidden');
+        }
+
+        function validateModalForm() {
+            const name = updaterNameInput.value.trim();
+            const email = updaterEmailInput.value.trim();
+            modalSaveBtn.disabled = !(name && email);
+        }
+        
+        async function downloadDataAsCSV() {
+            downloadBtn.textContent = 'Preparing...';
+            downloadBtn.disabled = true;
+            try {
+                await fetchActivities(); 
+
+                if (allActivities.length === 0) {
+                    showMessage('No activities to download.', 'error');
+                    return;
+                }
+
+                const dataToExport = allActivities.map(act => ({
+                    'Outcome': act.outcome,
+                    'Sub-Output': act.output,
+                    'Name of Agency': act.agency,
+                    'Activity': act.activityName,
+                    'Budget ($)': act.budget,
+                    'End Date': act.endDate,
+                    'Progress Update': act.progressUpdate,
+                    'Updated By Name': act.updatedBy_name,
+                    'Updated By Email': act.updatedBy_email
+                }));
+
+                const csv = Papa.unparse(dataToExport);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                const url = URL.createObjectURL(blob);
+                link.setAttribute('href', url);
+                link.setAttribute('download', 'jwp_updates_export.csv');
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+            } catch (error) {
+                console.error("Failed to download data:", error);
+                showMessage('An error occurred while preparing the download.', 'error');
+            } finally {
+                downloadBtn.textContent = 'Download Data as CSV';
+                downloadBtn.disabled = false;
+            }
+        }
+
+        function showMessage(text, type = 'success') {
+            messageArea.textContent = text;
+            messageArea.className = `my-4 p-4 text-sm rounded-md ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+            messageArea.classList.remove('hidden');
+            setTimeout(() => {
+                messageArea.classList.add('hidden');
+            }, 4000);
+        }
+
+        // --- Event Listeners ---
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFileUpload(file);
+        });
+
+        agencyFilter.addEventListener('change', (e) => renderActivities(e.target.value));
+        
+        downloadBtn.addEventListener('click', downloadDataAsCSV);
+
+        activitiesContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('update-btn')) {
+                const row = e.target.closest('tr');
+                const activityId = row.dataset.id;
+                openUpdateModal(activityId);
+            }
+        });
+
+        modalCancelBtn.addEventListener('click', closeUpdateModal);
+        updaterNameInput.addEventListener('input', validateModalForm);
+        updaterEmailInput.addEventListener('input', validateModalForm);
+
+        modalSaveBtn.addEventListener('click', async () => {
+             if (!currentActivityId) return;
+
+            const budget = modalBudgetInput.value;
+            const endDate = modalEndDateInput.value;
+            const progressUpdate = modalProgressUpdateInput.value;
+            const updaterName = updaterNameInput.value;
+            const updaterEmail = updaterEmailInput.value;
+
+            const dataToUpdate = {
+                budget: budget ? parseFloat(budget) : 0,
+                endDate: endDate,
+                progressUpdate: progressUpdate,
+                updatedBy_name: updaterName,
+                updatedBy_email: updaterEmail,
+                lastUpdated: serverTimestamp()
+            };
+
+            modalSaveBtn.textContent = 'Saving...';
+            modalSaveBtn.disabled = true;
+
+            try {
+                const docRef = doc(db, jwpCollectionPath, currentActivityId);
+                await updateDoc(docRef, dataToUpdate);
+
+                const activityIndex = allActivities.findIndex(act => act.id === currentActivityId);
+                if (activityIndex > -1) {
+                    allActivities[activityIndex] = { ...allActivities[activityIndex], ...dataToUpdate };
+                }
+                
+                showMessage('Activity updated successfully!', 'success');
+                renderActivities(agencyFilter.value); // Re-render to show updated values
+                closeUpdateModal();
+            } catch (error) {
+                console.error("Error updating document: ", error);
+                showMessage('Failed to update activity.', 'error');
+            } finally {
+                modalSaveBtn.textContent = 'Save Changes';
+                // The disabled state will be reset when the modal is next opened.
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', initializeAppLogic);
+    </script>
+</body>
+</html>
+
